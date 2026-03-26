@@ -1,0 +1,28 @@
+{
+  "name": "codevix-whatsapp-ai-bot",
+  "version": "1.0.0",
+  "description": "Codevix WhatsApp AI Automation Bot using Baileys and OpenRouter",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": [
+    "whatsapp-bot",
+    "ai-bot",
+    "automation",
+    "baileys",
+    "openrouter",
+    "chatbot",
+    "codevix"
+  ],
+  "author": "Codevix (www.codevix.in)",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "axios": "^1.13.6",
+    "dotenv": "^17.3.1",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

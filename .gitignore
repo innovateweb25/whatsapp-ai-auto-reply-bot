@@ -1,0 +1,15 @@
+node_modules/
+
+
+.env
+app/.env
+
+
+app/src/auth/
+
+
+*.log
+
+
+.DS_Store
+Thumbs.db
