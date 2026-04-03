@@ -1,19 +1,34 @@
 require("dotenv").config();
 const startWhatsApp = require("./src/whatsapp/whatsapp");
 
-// Clear terminal
-console.clear();
+// 🧠 Validate ENV (minimal & clean)
+function validateEnv() {
+  const required = ["OPENROUTER_API_KEY", "AI_MODEL"];
 
-// Branding header
-console.log(`
+  const missing = required.filter((key) => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error(`
+❌ Missing required environment variables:
+${missing.map((m) => `- ${m}`).join("\n")}
+
+👉 Please check your .env file
+`);
+    process.exit(1);
+  }
+}
+
+// 🎨 Branding Header
+function showBanner() {
+  console.clear();
+
+  console.log(`
 ==================================================
 🚀 CODEVIX WHATSAPP AI AUTOMATION
 ==================================================
 
-🌐 Website   : www.codevix.in
-🤖 AI Name   : ${process.env.AI_NAME || "AI"}
+🤖 AI Name   : ${process.env.AI_NAME || "Assistant"}
 📦 Model     : ${process.env.AI_MODEL}
-⚙️  AI Status: ${process.env.AI_ENABLED === "true" ? "Enabled" : "Disabled"}
 
 --------------------------------------------------
 💡 Powered by Codevix
@@ -21,6 +36,29 @@ console.log(`
 
 📱 Initializing WhatsApp connection...
 `);
+}
 
-// Start bot
-startWhatsApp();
+// 🚀 Start App
+async function main() {
+  try {
+    validateEnv();
+    showBanner();
+
+    await startWhatsApp();
+
+  } catch (err) {
+    console.error("❌ Startup Error:", err.message);
+    process.exit(1);
+  }
+}
+
+// 🛡️ Global error handling
+process.on("uncaughtException", (err) => {
+  console.error("❌ Uncaught Exception:", err.message);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("❌ Unhandled Rejection:", err);
+});
+
+main();

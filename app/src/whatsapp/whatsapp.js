@@ -1,7 +1,8 @@
 const {
   default: makeWASocket,
   useMultiFileAuthState,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  DisconnectReason
 } = require("@whiskeysockets/baileys");
 
 const qrcode = require("qrcode-terminal");
@@ -11,128 +12,163 @@ require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 
-const AI_NAME = process.env.AI_NAME || "AI";
-
 // 📁 storage file
 const dataPath = path.join(__dirname, "../../data.json");
 
-// save logs
+// 💾 Safe log save
 function saveLog(entry) {
   try {
     let data = [];
 
     if (fs.existsSync(dataPath)) {
-      data = JSON.parse(fs.readFileSync(dataPath));
+      const file = fs.readFileSync(dataPath, "utf-8");
+      try {
+        data = JSON.parse(file);
+        if (!Array.isArray(data)) data = [];
+      } catch {
+        data = [];
+      }
     }
 
     data.push(entry);
 
+    // prevent huge file
+    if (data.length > 1000) {
+      data = data.slice(-500);
+    }
+
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
-  } catch {}
+  } catch (err) {
+    console.error("⚠️ Log save error:", err.message);
+  }
 }
 
-// format time
+// 🕒 time format
 function getTime() {
   return new Date().toLocaleTimeString();
 }
 
-// delay
+// ⏱️ smart delay
 function delay(ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
 
-// main start
+// 🎯 random human delay
+function getHumanDelay(text = "") {
+  const base = 800;
+  const extra = Math.min(text.length * 20, 2000);
+  return base + Math.floor(Math.random() * extra);
+}
+
+// 🚀 MAIN
 async function startWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState("auth");
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState("auth");
+    const { version } = await fetchLatestBaileysVersion();
 
-  // 🔥 latest version (IMPORTANT)
-  const { version } = await fetchLatestBaileysVersion();
+    const sock = makeWASocket({
+      auth: state,
+      version,
+      printQRInTerminal: false
+    });
 
-  const sock = makeWASocket({
-    auth: state,
-    version,
-    printQRInTerminal: true
-  });
+    sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("creds.update", saveCreds);
+    // 🔌 connection handling
+    sock.ev.on("connection.update", async (update) => {
+      const { connection, lastDisconnect, qr } = update;
 
-  sock.ev.on("connection.update", ({ connection, qr }) => {
-    if (qr) {
-      console.log("\n📱 Scan QR below:\n");
-      qrcode.generate(qr, { small: true });
-    }
+      if (qr) {
+        console.log("\n📱 Scan QR below:\n");
+        qrcode.generate(qr, { small: true });
+      }
 
-    if (connection === "open") {
-      console.log(`
+      if (connection === "open") {
+        console.log(`
 ========================================
 ✅ WhatsApp Connected Successfully
 ========================================
 `);
-    }
+      }
 
-    if (connection === "close") {
-      console.log("❌ Disconnected. Reconnecting...");
-      startWhatsApp();
-    }
-  });
+      if (connection === "close") {
+        const reason = lastDisconnect?.error?.output?.statusCode;
 
-  sock.ev.on("messages.upsert", async ({ messages }) => {
-    try {
-      const msg = messages[0];
+        console.log("❌ Disconnected:", reason);
 
-      if (!msg.message || msg.key.fromMe) return;
+        // logout case
+        if (reason === DisconnectReason.loggedOut) {
+          console.log("⚠️ Session logged out. Please delete auth folder and re-login.");
+        } else {
+          console.log("🔄 Reconnecting in 5 seconds...");
+          setTimeout(() => {
+            startWhatsApp();
+          }, 5000);
+        }
+      }
+    });
 
-      const text =
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text;
+    // 📩 message handler
+    sock.ev.on("messages.upsert", async ({ messages }) => {
+      try {
+        const msg = messages[0];
+        if (!msg.message || msg.key.fromMe) return;
 
-      if (!text) return;
+        const text =
+          msg.message.conversation ||
+          msg.message.extendedTextMessage?.text;
 
-      const number = msg.key.remoteJid.replace("@s.whatsapp.net", "");
+        if (!text) return;
 
-      // 👤 USER LOG
-      console.log(`
+        const number = msg.key.remoteJid.replace("@s.whatsapp.net", "");
+
+        // 👤 USER LOG
+        console.log(`
 👤 User (${number}) [${getTime()}]:
 ${text}
 `);
 
-      let reply = "Hello 👋";
+        // 🤖 AI reply (safe)
+        let reply;
+        try {
+          reply = await getAIReply(text);
+        } catch (err) {
+          console.error("⚠️ AI failed:", err.message);
+          reply = "Thoda busy hu abhi, baad me reply karta hu 🙂";
+        }
 
-      if (process.env.AI_ENABLED === "true") {
-        reply = await getAIReply(text);
-      }
+        // ⏱️ delay
+        const wait = getHumanDelay(text);
+        await delay(wait);
 
-      // ⏱️ human delay
-      const min = Number(process.env.MIN_REPLY_DELAY || 1000);
-      const max = Number(process.env.MAX_REPLY_DELAY || 3000);
-      const wait = Math.floor(Math.random() * (max - min) + min);
-
-      await delay(wait);
-
-      // 🤖 AI LOG
-      console.log(`
-🤖 ${AI_NAME}:
+        // 🤖 AI LOG
+        console.log(`
+🤖 Reply:
 ${reply}
 
 ----------------------------------------
 `);
 
-      await sock.sendMessage(msg.key.remoteJid, {
-        text: reply
-      });
+        await sock.sendMessage(msg.key.remoteJid, { text: reply });
 
-      // 💾 save
-      saveLog({
-        number,
-        userMessage: text,
-        aiReply: reply,
-        time: new Date().toISOString()
-      });
+        // 💾 save log
+        saveLog({
+          number,
+          userMessage: text,
+          aiReply: reply,
+          time: new Date().toISOString()
+        });
 
-    } catch (err) {
-      console.log("⚠️ Error handling message");
-    }
-  });
+      } catch (err) {
+        console.error("⚠️ Message handling error:", err.message);
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ Fatal error:", err.message);
+    console.log("🔄 Restarting in 5 seconds...");
+    setTimeout(() => startWhatsApp(), 5000);
+  }
 }
 
 module.exports = startWhatsApp;

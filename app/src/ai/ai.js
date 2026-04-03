@@ -1,39 +1,44 @@
 require("dotenv").config();
 const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
+const { buildSystemPrompt } = require("./SystemPrompt");
 
-// Load instructions.txt
-function loadInstructions() {
-  try {
-    const filePath = path.join(__dirname, "instructions.txt");
-    return fs.readFileSync(filePath, "utf-8");
-  } catch {
-    return "You are a helpful assistant.";
+// ⚙️ Config validation
+function validateEnv() {
+  if (!process.env.OPENROUTER_API_KEY) {
+    throw new Error("Missing OPENROUTER_API_KEY in .env");
+  }
+
+  if (!process.env.AI_MODEL) {
+    throw new Error("Missing AI_MODEL in .env");
   }
 }
 
-// AI Reply
+// ⏱️ timeout wrapper
+function withTimeout(promise, ms = 10000) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("AI request timeout")), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
+// 💬 fallback replies
+function getFallbackReply() {
+  const replies = [
+    "Thoda busy hu abhi, thodi der me reply karta hu 🙂",
+    "Ek min check karke batata hu 👍",
+    "Got it! Thoda process kar raha hu, wait kare 😊"
+  ];
+  return replies[Math.floor(Math.random() * replies.length)];
+}
+
+// 🤖 AI Reply
 async function getAIReply(userMessage) {
   try {
-    if (!process.env.OPENROUTER_API_KEY) {
-      return "⚠️ AI not configured.";
-    }
+    validateEnv();
 
-    const instructions = loadInstructions();
+    const systemPrompt = buildSystemPrompt();
 
-    // 🔥 hidden system control (force behavior)
-    const systemPrompt = `
-${instructions}
-
-IMPORTANT RULES:
-- Reply in simple Hinglish or English
-- Keep replies short (max 2-4 lines)
-- Avoid complex Hindi
-- Be human-like, not robotic
-`;
-
-    const res = await axios.post(
+    const request = axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: process.env.AI_MODEL,
@@ -50,10 +55,22 @@ IMPORTANT RULES:
       }
     );
 
-    return res.data.choices[0].message.content.trim();
+    const res = await withTimeout(request, 10000);
+
+    // ✅ Safe response parsing
+    const content =
+      res?.data?.choices?.[0]?.message?.content?.trim();
+
+    if (!content) {
+      console.error("⚠️ Empty AI response");
+      return getFallbackReply();
+    }
+
+    return content;
 
   } catch (err) {
-    return "⚠️ AI error, try again.";
+    console.error("❌ AI Error:", err.message);
+    return getFallbackReply();
   }
 }
 
