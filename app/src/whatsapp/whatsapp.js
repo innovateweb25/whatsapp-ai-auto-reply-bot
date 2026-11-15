@@ -53,11 +53,19 @@ function delay(ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
 
+// ⏱️ Read a non-negative integer setting, falling back when invalid.
+function getDelaySetting(name, fallback) {
+  const value = Number.parseInt(process.env[name], 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 // 🎯 random human delay
-function getHumanDelay(text = "") {
-  const base = 800;
-  const extra = Math.min(text.length * 20, 2000);
-  return base + Math.floor(Math.random() * extra);
+function getHumanDelay() {
+  const min = getDelaySetting("MIN_REPLY_DELAY", 1000);
+  const configuredMax = getDelaySetting("MAX_REPLY_DELAY", 3000);
+  const max = Math.max(min, configuredMax);
+
+  return min + Math.floor(Math.random() * (max - min + 1));
 }
 
 // 🚀 MAIN
@@ -128,6 +136,12 @@ async function startWhatsApp() {
 ${text}
 `);
 
+        // 🤖 Respect the AI_ENABLED setting from .env
+        if (process.env.AI_ENABLED?.trim().toLowerCase() === "false") {
+          console.log("ℹ️ AI replies are disabled (AI_ENABLED=false).");
+          return;
+        }
+
         // 🤖 AI reply (safe)
         let reply;
         try {
@@ -137,9 +151,8 @@ ${text}
           reply = "Thoda busy hu abhi, baad me reply karta hu 🙂";
         }
 
-        // ⏱️ delay
-        const wait = getHumanDelay(text);
-        await delay(wait);
+        // ⏱️ delay configured through MIN_REPLY_DELAY / MAX_REPLY_DELAY
+        await delay(getHumanDelay());
 
         // 🤖 AI LOG
         console.log(`
